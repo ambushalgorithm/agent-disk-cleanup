@@ -34,6 +34,8 @@ Safety rails in every script:
   the database untouched.
 - A trap removes temporary files (and restores the database if interrupted
   mid-swap).
+- The `KEEP_RECENT_SESSIONS` most recent top-level sessions (and their
+  sub-sessions) are **never** pruned, even when older than the retention window.
 - Idempotent; re-running is safe.
 
 ## Contents
@@ -91,6 +93,7 @@ Preview changes without touching anything:
 | --- | --- | --- |
 | `SCRIPT_DIR` | `$HOME/bin` | Where user scripts are installed |
 | `RETENTION_DAYS` | `2` | opencode sessions older than this are pruned |
+| `KEEP_RECENT_SESSIONS` | `3` | Always keep at least this many recent top-level sessions (and their sub-sessions) |
 | `SCHEDULE` | `Mon,Wed,Fri,Sun 04:00` | opencode/Docker timer |
 | `HOST_SCHEDULE` | `Mon,Wed,Fri,Sun 04:20` | host cleanup timer |
 | `RANDOMIZED_DELAY` | `600` | systemd jitter in seconds |

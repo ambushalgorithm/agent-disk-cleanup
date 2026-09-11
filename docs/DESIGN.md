@@ -31,6 +31,11 @@ To actually shrink the file, SQLite provides:
    older than `RETENTION_DAYS`, then calls `PRAGMA incremental_vacuum` followed by
    `PRAGMA wal_checkpoint(TRUNCATE)`. No temporary file, no second copy.
 
+   A retention floor applies: the `KEEP_RECENT_SESSIONS` (default 3) most recent
+   top-level sessions (`parent_id IS NULL`) by `time_updated`, plus any sub-session
+   whose parent is one of them, are excluded from deletion even if they are older
+   than the retention window. This guarantees recent work is never pruned.
+
 ## Idle gating
 
 Pruning requires exclusive-ish access and must not interrupt active work. Before

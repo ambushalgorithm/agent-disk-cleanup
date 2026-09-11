@@ -94,18 +94,32 @@ stop_opencode() {
 }
 
 # prune_sessions <days>
-# Reads: DB, BATCH
+# Reads: DB, BATCH, KEEP_RECENT_SESSIONS
 prune_sessions() {
-  local days="$1" cut total ids_file
+  local days="$1" cut total ids_file keep
+  keep="${KEEP_RECENT_SESSIONS:-3}"
   cut=$(( ( $(date +%s) - days*86400 ) * 1000 ))
   log "Retention ${days}d; pruning sessions updated before $(date -d "@$((cut/1000))" '+%Y-%m-%d %H:%M')"
+  log "keeping the ${keep} most recent top-level session(s) (+ their sub-sessions)"
 
-  total=$(sqlite3 -cmd ".timeout 5000" "$DB" "SELECT count(*) FROM session WHERE time_updated < $cut;")
+  # Protected set: the N most recent top-level sessions, plus any sub-session
+  # whose parent is one of them, so a preserved parent is never left with a
+  # pruned child.
+  local keep_cte="WITH keep AS (
+      SELECT id FROM session WHERE parent_id IS NULL ORDER BY time_updated DESC, id DESC LIMIT ${keep}
+    ),
+    protected AS (
+      SELECT id FROM keep
+      UNION
+      SELECT id FROM session WHERE parent_id IN (SELECT id FROM keep)
+    )"
+
+  total=$(sqlite3 -cmd ".timeout 5000" "$DB" "$keep_cte SELECT count(*) FROM session WHERE time_updated < $cut AND id NOT IN (SELECT id FROM protected);")
   log "sessions to prune: $total"
   [ "$total" -gt 0 ] || return 0
 
   ids_file="$(mktemp)"
-  sqlite3 "$DB" "SELECT id FROM session WHERE time_updated < $cut;" > "$ids_file"
+  sqlite3 "$DB" "$keep_cte SELECT id FROM session WHERE time_updated < $cut AND id NOT IN (SELECT id FROM protected);" > "$ids_file"
 
   prune_batch() {
     local ids="" id

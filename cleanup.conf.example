@@ -10,6 +10,10 @@ SCRIPT_DIR="$HOME/bin"
 # opencode session retention, in days.
 RETENTION_DAYS=2
 
+# Always keep at least this many of the most recent top-level opencode sessions
+# (and their sub-sessions), regardless of retention.
+KEEP_RECENT_SESSIONS=3
+
 # systemd OnCalendar expressions (see `man systemd.time`).
 SCHEDULE="Mon,Wed,Fri,Sun 04:00"
 HOST_SCHEDULE="Mon,Wed,Fri,Sun 04:20"
