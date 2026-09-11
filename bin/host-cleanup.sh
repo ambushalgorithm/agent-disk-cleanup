@@ -1,21 +1,25 @@
 #!/usr/bin/env bash
 set -uo pipefail
 
-# Host-level cleanup: journald size cap/vacuum and package-manager cache.
-# Runs as root via host-cleanup.service. Supports DRY_RUN=1 for a preview.
+# Host-level cleanup. Runs as root via the scheduler. Supports DRY_RUN=1.
+#
+# Linux: caps/vacuums journald and cleans the apt cache.
+# macOS: optionally runs the built-in `periodic` maintenance scripts.
+# Every action is toggleable and skipped when its tools are unavailable.
 
 DIR="$(cd "$(dirname "$0")" && pwd)"
 # shellcheck source=/dev/null
 if [ -f "$DIR/opencode-db-lib.sh" ]; then
-  source "$DIR/opencode-db-lib.sh"
+  . "$DIR/opencode-db-lib.sh"
 else
-  log() { printf '[%s] %s\n' "$(date -Is)" "$*"; }
+  log() { printf '[%s] %s\n' "$(date '+%Y-%m-%dT%H:%M:%S%z')" "$*"; }
 fi
 
 JOURNAL_CONF="/etc/systemd/journald.conf"
 JOURNAL_MAX_USE="${JOURNAL_MAX_USE:-500M}"
 ENABLE_JOURNALD="${ENABLE_JOURNALD:-1}"
 ENABLE_APT_CLEAN="${ENABLE_APT_CLEAN:-1}"
+ENABLE_MACOS_CLEANUP="${ENABLE_MACOS_CLEANUP:-0}"
 DRY_RUN="${DRY_RUN:-0}"
 
 run() {
@@ -26,7 +30,7 @@ run() {
   fi
 }
 
-if [ "$ENABLE_JOURNALD" = "1" ]; then
+if [ "$ENABLE_JOURNALD" = "1" ] && have journalctl; then
   if [ -f "$JOURNAL_CONF" ]; then
     changed=0
     if grep -qE '^[[:space:]]*SystemMaxUse=' "$JOURNAL_CONF"; then
@@ -35,7 +39,7 @@ if [ "$ENABLE_JOURNALD" = "1" ]; then
         if [ "$DRY_RUN" = "1" ]; then
           log "DRY_RUN: set SystemMaxUse=$JOURNAL_MAX_USE in $JOURNAL_CONF (was $current)"
         else
-          sed -i "s|^[[:space:]]*SystemMaxUse=.*|SystemMaxUse=${JOURNAL_MAX_USE}|" "$JOURNAL_CONF"
+          sed_inplace "s|^[[:space:]]*SystemMaxUse=.*|SystemMaxUse=${JOURNAL_MAX_USE}|" "$JOURNAL_CONF"
         fi
         changed=1
       fi
@@ -43,7 +47,7 @@ if [ "$ENABLE_JOURNALD" = "1" ]; then
       if [ "$DRY_RUN" = "1" ]; then
         log "DRY_RUN: add SystemMaxUse=$JOURNAL_MAX_USE to $JOURNAL_CONF"
       else
-        sed -i "/^\[Journal\]/a SystemMaxUse=${JOURNAL_MAX_USE}" "$JOURNAL_CONF"
+        sed_inplace "/^\[Journal\]/a SystemMaxUse=${JOURNAL_MAX_USE}" "$JOURNAL_CONF"
       fi
       changed=1
     else
@@ -61,12 +65,19 @@ if [ "$ENABLE_JOURNALD" = "1" ]; then
   log "vacuuming journald to ${JOURNAL_MAX_USE}"
   run journalctl --vacuum-size="$JOURNAL_MAX_USE"
 else
-  log "journald cleanup disabled"
+  log "journald cleanup disabled or unavailable"
 fi
 
-if [ "$ENABLE_APT_CLEAN" = "1" ] && command -v apt-get >/dev/null 2>&1; then
+if [ "$ENABLE_APT_CLEAN" = "1" ] && have apt-get; then
   log "cleaning apt cache"
   run apt-get clean
 else
   log "apt cleanup disabled or unavailable"
+fi
+
+if [ "$ENABLE_MACOS_CLEANUP" = "1" ] && have periodic; then
+  log "running macOS periodic maintenance"
+  run periodic daily weekly monthly
+else
+  log "macOS periodic cleanup disabled or unavailable"
 fi

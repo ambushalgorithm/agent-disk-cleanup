@@ -3,7 +3,11 @@
 Portable cleanup automation for machines that run [opencode](https://opencode.ai).
 It prunes old opencode session data and reclaims the space **without ever
 temporarily consuming more disk space**, and optionally trims Docker build
-cache, `journald`, and the `apt` cache.
+cache, `journald`, the `apt` cache, or macOS maintenance scripts.
+
+Runs on **Linux** (systemd), **macOS** (launchd), and other Unix systems
+(cron). The shell code avoids GNU-only flags and falls back to BSD/POSIX
+equivalents.
 
 ## The problem
 
@@ -42,15 +46,31 @@ Safety rails in every script:
 
 | Path | Purpose |
 | --- | --- |
+| `bin/platform.sh` | Portable helpers (OS detection, `df`/`stat`/`date`/CPU fallbacks, scheduling) |
 | `bin/opencode-db-lib.sh` | Shared helpers (logging, idle detection, prune) |
 | `bin/opencode-db-compact.sh` | Recurring prune + `incremental_vacuum` |
 | `bin/opencode-db-convert.sh` | One-time off-root conversion to incremental |
 | `bin/opencode-cleanup.sh` | Docker builder prune, then the DB prune |
-| `bin/host-cleanup.sh` | journald cap/vacuum and `apt` cache (root) |
+| `bin/host-cleanup.sh` | journald/apt (Linux) or `periodic` (macOS) |
+| `run-cleanup.sh` | One-shot runner: backup + prune + one-time conversion |
 | `systemd/*.in` | Unit templates rendered by the installer |
-| `install.sh` | Idempotent installer / uninstaller |
+| `launchd/*.plist.in` | launchd agent/daemon templates rendered by the installer |
+| `install.sh` | Idempotent installer / uninstaller (systemd/launchd/cron) |
 | `cleanup.conf.example` | Configuration reference |
+| `tests/` | Cross-platform helper and prune smoke tests |
 | `docs/DESIGN.md` | Design notes and rationale |
+
+## Platform support
+
+| Platform | Scheduler | Host cleanup |
+| --- | --- | --- |
+| Linux | systemd timers | `journald` cap/vacuum, `apt-get clean` |
+| macOS | launchd agents/daemons | `periodic` (opt-in via `ENABLE_MACOS_CLEANUP=1`) |
+| Other Unix/BSD | cron (`crontab`) | journald/apt where available |
+
+The installer picks the scheduler automatically. A user-level agent runs the
+opencode/Docker cleanup; a root-level daemon/service runs host cleanup.
+
 
 ## Installation
 
@@ -66,11 +86,12 @@ cp cleanup.conf.example cleanup.conf   # optional; edit as needed
 
 The installer:
 
-- checks for `bash`, `sqlite3`, and `systemd` (docker/opencode optional);
+- checks for `bash` and `sqlite3`, and for a scheduler
+  (`systemctl`, `launchctl`, or `crontab`); docker/opencode are optional;
 - copies the user scripts to `$SCRIPT_DIR` (default `$HOME/bin`);
 - installs the root helper under `/usr/local/lib/agent-disk-cleanup/`;
-- writes `/etc/agent-disk-cleanup.conf` and the systemd units;
-- enables `opencode-cleanup.timer` and `host-cleanup.timer`.
+- writes `/etc/agent-disk-cleanup.conf` and the scheduler entries;
+- enables the opencode/Docker job and the host-cleanup job.
 
 Preview changes without touching anything:
 
@@ -85,6 +106,22 @@ Preview changes without touching anything:
 ./install.sh --uninstall --purge  # also remove installed scripts/env file
 ```
 
+## Quick cleanup (no install)
+
+`run-cleanup.sh` runs everything in place, with no installer or sudo. It takes a
+consistent backup, prunes, and performs the one-time conversion:
+
+```bash
+./run-cleanup.sh                  # backup + prune + convert
+RETENTION_DAYS=7 ./run-cleanup.sh # change retention for this run
+FORCE=1 ./run-cleanup.sh          # allow stopping a running opencode (when idle)
+```
+
+It refuses to run while opencode is active unless `FORCE=1`, and even then only
+stops it once the idle gate is satisfied. The backup is removed automatically
+after a successful run; set `KEEP_BACKUP=1` to retain it, or `BACKUP=0` to skip
+the backup entirely. On failure the backup is always kept.
+
 ## Configuration
 
 `cleanup.conf` (or environment variables):
@@ -94,15 +131,17 @@ Preview changes without touching anything:
 | `SCRIPT_DIR` | `$HOME/bin` | Where user scripts are installed |
 | `RETENTION_DAYS` | `2` | opencode sessions older than this are pruned |
 | `KEEP_RECENT_SESSIONS` | `3` | Always keep at least this many recent top-level sessions (and their sub-sessions) |
-| `SCHEDULE` | `Mon,Wed,Fri,Sun 04:00` | opencode/Docker timer |
-| `HOST_SCHEDULE` | `Mon,Wed,Fri,Sun 04:20` | host cleanup timer |
+| `SCHEDULE` | `Mon,Wed,Fri,Sun 04:00` | opencode/Docker job schedule (`DOW-list HH:MM`) |
+| `HOST_SCHEDULE` | `Mon,Wed,Fri,Sun 04:20` | host cleanup schedule |
 | `RANDOMIZED_DELAY` | `600` | systemd jitter in seconds |
-| `CONVERT_DIR` | auto-detected | Off-root build dir for the one-time conversion |
+| `CONVERT_DIR` | auto-detected | Off-root build dir for the one-time conversion (empty = auto) |
 | `OPENCODE_DB` | auto-detected | Database path (`opencode db path` / XDG) |
+| `CONVERT` | `0` | Let the scheduled job run the one-time conversion |
 | `ENABLE_DOCKER_PRUNE` | `1` | Run `docker builder prune -af` |
 | `ENABLE_JOURNALD` | `1` | Cap + vacuum `journald` |
 | `JOURNAL_MAX_USE` | `500M` | `SystemMaxUse` for `journald` |
 | `ENABLE_APT_CLEAN` | `1` | Run `apt-get clean` |
+| `ENABLE_MACOS_CLEANUP` | `0` | Run macOS `periodic` maintenance |
 
 ## One-time conversion
 
@@ -114,14 +153,28 @@ only deletes rows (so it never grows) but cannot shrink the file. Convert once:
 CONVERT=1 "$HOME/bin/opencode-db-compact.sh"
 ```
 
+Or set `CONVERT=1` in `cleanup.conf` before installing to have the scheduled job
+perform it on the first idle run (it stops opencode only when no session has
+been active for `IDLE_MINUTES` and CPU use is low).
+
 Requirements:
 
-- `CONVERT_DIR` must be on a **different filesystem** with free space roughly
-  equal to the live database size. The script refuses otherwise (override with
-  `ALLOW_SAME_FS=1` only if you accept a temporary increase).
-- The database filesystem only ever decreases in usage during the swap.
+- If a secondary filesystem is available, `CONVERT_DIR` is auto-detected and
+  used, so the database filesystem only ever decreases in usage during the
+  swap. If none is available, the conversion builds on the database filesystem
+  and temporarily needs ~2× the live database in free space (set
+  `ALLOW_SAME_FS=1` to acknowledge this, or point `CONVERT_DIR` at another
+  filesystem).
 
 After conversion, every scheduled run reclaims space in place.
+
+## Testing
+
+```bash
+bash tests/portability.sh   # helper + syntax smoke tests
+bash tests/prune.sh         # prune/cascade/retention-floor functional test
+./install.sh --dry-run      # preview scheduler changes
+```
 
 ## Troubleshooting
 
@@ -130,7 +183,12 @@ After conversion, every scheduled run reclaims space in place.
 - **"not incremental; skipping vacuum"** — run the one-time conversion (above);
   no growth occurs until then.
 - **Docker prune**: set `ENABLE_DOCKER_PRUNE=0` to disable.
-- **Logs**: `journalctl -u opencode-cleanup -u host-cleanup`.
+- **Logs (Linux)**: `journalctl -u opencode-cleanup -u host-cleanup`.
+- **Logs (macOS)**: `~/.local/state/agent-disk-cleanup/opencode-cleanup.log`
+  and `/var/log/agent-disk-cleanup/host-cleanup.log`.
+- **macOS job didn't run**: check `launchctl list | grep agent-disk-cleanup`
+  and confirm the agent is loaded (`launchctl print gui/$(id -u)/com.agent-disk-cleanup.opencode`).
+- **cron fallback**: inspect with `crontab -l` (user) and `sudo crontab -l` (root).
 
 ## License
 

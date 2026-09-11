@@ -6,7 +6,6 @@ DIR="$(cd "$(dirname "$0")" && pwd)"
 source "$DIR/opencode-db-lib.sh"
 
 DB="${OPENCODE_DB:-$(default_db_path)}"
-BUILD_DIR="${CONVERT_DIR:-${TMPDIR:-/var/tmp}/agent-disk-cleanup-convert}"
 MARGIN="${SPACE_MARGIN_BYTES:-$(( 3 * 1024 * 1024 * 1024 ))}"
 ALLOW_SAME_FS="${ALLOW_SAME_FS:-0}"
 
@@ -21,6 +20,21 @@ if [ ! -f "$DB" ]; then
   exit 1
 fi
 
+# Resolve the build directory. Prefer an explicit CONVERT_DIR, then an
+# auto-detected secondary filesystem, then fall back to the local temp dir with
+# same-filesystem building allowed (safe when free space is ample).
+if [ -z "${CONVERT_DIR:-}" ]; then
+  if CONVERT_DIR=$(find_secondary_fs "$(dirname "$DB")" "$MARGIN"); then
+    log "auto-detected off-root CONVERT_DIR=$CONVERT_DIR"
+  else
+    CONVERT_DIR="${TMPDIR:-/var/tmp}/agent-disk-cleanup-convert"
+    ALLOW_SAME_FS=1
+    log "WARNING: no secondary filesystem found; building on the database filesystem."
+    log "WARNING: this temporarily needs ~2x the live database in free space."
+  fi
+fi
+BUILD_DIR="$CONVERT_DIR"
+
 set +e
 stop_opencode "$IDLE_MINUTES" "$CPU_SAMPLE" "$CPU_TICKS_MAX" "$STOP_WAIT" "$STOP_RECHECK"
 rc=$?
@@ -34,9 +48,9 @@ esac
 mkdir -p "$BUILD_DIR" || { log "cannot create build dir: $BUILD_DIR"; exit 1; }
 
 # The conversion rebuilds a full second copy. To guarantee the DB filesystem
-# never grows, that copy must live on a different filesystem.
-DB_DEV=$(stat -c %d "$(dirname "$DB")" 2>/dev/null || echo "")
-BUILD_DEV=$(stat -c %d "$BUILD_DIR" 2>/dev/null || echo "")
+# never grows, that copy should live on a different filesystem.
+DB_DEV=$(fs_device "$(dirname "$DB")" 2>/dev/null || echo "")
+BUILD_DEV=$(fs_device "$BUILD_DIR" 2>/dev/null || echo "")
 if [ -n "$DB_DEV" ] && [ "$DB_DEV" = "$BUILD_DEV" ] && [ "$ALLOW_SAME_FS" != "1" ]; then
   log "ERROR: build dir ($BUILD_DIR) is on the same filesystem as the database."
   log "Set CONVERT_DIR to a directory on another filesystem, or ALLOW_SAME_FS=1 to override."
@@ -48,7 +62,7 @@ PAGE_COUNT=$(sqlite3 -cmd ".timeout 5000" "$DB" "PRAGMA page_count;")
 FREELIST=$(sqlite3 -cmd ".timeout 5000" "$DB" "PRAGMA freelist_count;")
 LIVE=$(( (PAGE_COUNT - FREELIST) * PAGE_SIZE ))
 REQUIRED=$(( LIVE + MARGIN ))
-AVAIL=$(df_bytes "$BUILD_DIR")
+AVAIL=$(df_avail_bytes "$BUILD_DIR")
 
 log "live=${LIVE} bytes; build-dir free=${AVAIL}; required=${REQUIRED}"
 if [ "$AVAIL" -lt "$REQUIRED" ]; then
@@ -87,7 +101,7 @@ if [ "$AV" != "2" ]; then
   log "ERROR: build auto_vacuum=$AV (expected 2)"
   exit 1
 fi
-log "build verified (integrity ok, auto_vacuum=2, size=$(stat -c %s "$BUILD") bytes)"
+log "build verified (integrity ok, auto_vacuum=2, size=$(file_size "$BUILD") bytes)"
 KEEP_BUILD=1
 
 log "swapping: removing old root DB, then copying new one into place ..."

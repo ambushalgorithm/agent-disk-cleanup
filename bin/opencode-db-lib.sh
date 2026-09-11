@@ -2,15 +2,20 @@
 # Shared helpers for agent disk-cleanup scripts.
 # Intended to be sourced, not executed.
 
-log() { printf '[%s] %s\n' "$(date -Is)" "$*"; }
+ADC_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=/dev/null
+. "$ADC_LIB_DIR/platform.sh"
 
-df_bytes() { df -B1 --output=avail "$1" 2>/dev/null | tail -1 | tr -d '[:space:]'; }
+log() { printf '[%s] %s\n' "$(now_iso)" "$*"; }
+
+# Backwards-compatible alias.
+df_bytes() { df_avail_bytes "$1"; }
 
 # Print the default opencode database path. Honors `opencode db path` when the
 # CLI is available, otherwise falls back to the XDG data directory.
 default_db_path() {
   local p
-  if command -v opencode >/dev/null 2>&1; then
+  if have opencode; then
     p=$(opencode db path 2>/dev/null | head -1 || true)
     if [ -n "${p:-}" ]; then
       echo "$p"
@@ -20,24 +25,36 @@ default_db_path() {
   echo "${XDG_DATA_HOME:-$HOME/.local/share}/opencode/opencode.db"
 }
 
-opencode_running() { pgrep -x opencode >/dev/null 2>&1; }
+opencode_running() {
+  local pids
+  pids=$(list_opencode_pids)
+  [ -n "$pids" ]
+}
 
-opencode_cpu_ticks() {
+show_opencode() {
+  local pids
+  pids=$(list_opencode_pids | tr '\n' ' ')
+  [ -n "$pids" ] || return 0
+  ps -o pid=,command= -p $pids 2>/dev/null || true
+}
+
+# Sum cumulative CPU time (centiseconds) across opencode processes.
+opencode_cpu_centis() {
   local s=0 p t
-  for p in $(pgrep -x opencode 2>/dev/null); do
-    t=$(awk '{print $14+$15}' "/proc/$p/stat" 2>/dev/null || true)
+  for p in $(list_opencode_pids 2>/dev/null); do
+    t=$(proc_cpu_centis "$p" 2>/dev/null || echo 0)
     s=$(( s + ${t:-0} ))
   done
   echo "$s"
 }
 
-# stop_opencode [idle_minutes] [cpu_sample] [cpu_ticks_max] [stop_wait] [recheck]
+# stop_opencode [idle_minutes] [cpu_sample] [cpu_centis_max] [stop_wait] [recheck]
 # Reads: STOP_OPENCODE, DB
 # Returns: 0 = safe to proceed (stopped or not running)
 #          10 = skipped because opencode is active
 #          1  = error
 stop_opencode() {
-  local idle_minutes="${1:-15}" cpu_sample="${2:-5}" cpu_ticks_max="${3:-20}"
+  local idle_minutes="${1:-15}" cpu_sample="${2:-5}" cpu_centis_max="${3:-20}"
   local stop_wait="${4:-30}" recheck="${5:-10}"
   local last_ms now_ms a b i
 
@@ -45,7 +62,7 @@ stop_opencode() {
 
   if [ "${STOP_OPENCODE:-1}" != "1" ]; then
     log "opencode running and STOP_OPENCODE!=1; aborting:"
-    pgrep -ax opencode || true
+    show_opencode
     return 1
   fi
 
@@ -56,40 +73,44 @@ stop_opencode() {
     return 10
   fi
 
-  a=$(opencode_cpu_ticks)
+  a=$(opencode_cpu_centis)
   sleep "$cpu_sample"
-  b=$(opencode_cpu_ticks)
-  if [ $(( b - a )) -gt "$cpu_ticks_max" ]; then
-    log "opencode busy (${b}-${a} ticks / ${cpu_sample}s); skipping (opencode left running)"
+  b=$(opencode_cpu_centis)
+  if [ $(( b - a )) -gt "$cpu_centis_max" ]; then
+    log "opencode busy (${b}-${a} centis / ${cpu_sample}s); skipping (opencode left running)"
     return 10
   fi
 
   log "opencode idle; stopping (TERM, then KILL after ${stop_wait}s):"
-  pgrep -ax opencode || true
-  pkill -TERM -x opencode 2>/dev/null || true
+  show_opencode
+  for i in $(list_opencode_pids 2>/dev/null); do
+    kill -TERM "$i" 2>/dev/null || true
+  done
   for i in $(seq 1 "$stop_wait"); do
     opencode_running || break
     sleep 1
   done
   if opencode_running; then
     log "still running; sending KILL"
-    pkill -KILL -x opencode 2>/dev/null || true
+    for i in $(list_opencode_pids 2>/dev/null); do
+      kill -KILL "$i" 2>/dev/null || true
+    done
     sleep 2
   fi
   if opencode_running; then
     log "ERROR: could not stop opencode:"
-    pgrep -ax opencode || true
+    show_opencode
     return 1
   fi
   for i in $(seq 1 "$recheck"); do
     if opencode_running; then
       log "opencode reappeared; aborting:"
-      pgrep -ax opencode || true
+      show_opencode
       return 1
     fi
     sleep 1
   done
-  log "opencode stopped and stayed stopped"
+  log "opencode stopped and stayed stable"
   return 0
 }
 
@@ -99,7 +120,7 @@ prune_sessions() {
   local days="$1" cut total ids_file keep
   keep="${KEEP_RECENT_SESSIONS:-3}"
   cut=$(( ( $(date +%s) - days*86400 ) * 1000 ))
-  log "Retention ${days}d; pruning sessions updated before $(date -d "@$((cut/1000))" '+%Y-%m-%d %H:%M')"
+  log "Retention ${days}d; pruning sessions updated before $(epoch_to_human $((cut/1000)) '%Y-%m-%d %H:%M')"
   log "keeping the ${keep} most recent top-level session(s) (+ their sub-sessions)"
 
   # Protected set: the N most recent top-level sessions, plus any sub-session
@@ -134,10 +155,19 @@ prune_sessions() {
       COMMIT;
       PRAGMA wal_checkpoint(PASSIVE);" >/dev/null
   }
-  export -f prune_batch
-  export DB
 
-  log "deleting in batches of ${BATCH:-50} ..."
-  xargs -a "$ids_file" -n "${BATCH:-50}" bash -c 'prune_batch "$@"' _
+  local batch_size="${BATCH:-50}" batch=() id
+  log "deleting in batches of ${batch_size} ..."
+  while IFS= read -r id; do
+    [ -n "$id" ] || continue
+    batch+=("$id")
+    if [ "${#batch[@]}" -ge "$batch_size" ]; then
+      prune_batch "${batch[@]}"
+      batch=()
+    fi
+  done < "$ids_file"
+  if [ "${#batch[@]}" -gt 0 ]; then
+    prune_batch "${batch[@]}"
+  fi
   rm -f "$ids_file"
 }

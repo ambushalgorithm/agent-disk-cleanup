@@ -51,8 +51,28 @@ process still holds the database (via `pgrep` and `lsof`).
 ## Sidecar cleanups
 
 - `docker builder prune -af` runs first, gated by `ENABLE_DOCKER_PRUNE`.
-- `host-cleanup.sh` runs as root and caps `journald` (`SystemMaxUse`) and runs
-  `journalctl --vacuum-size`, plus `apt-get clean`. Both are toggleable.
+- `host-cleanup.sh` runs as root: on Linux it caps `journald`
+  (`SystemMaxUse`) and runs `journalctl --vacuum-size`, plus `apt-get clean`;
+  on macOS it can run `periodic` (`ENABLE_MACOS_CLEANUP`). Each action is
+  skipped when its tools are unavailable.
+
+## Portability
+
+The scripts target Linux, macOS, and the BSDs under bash 3.2+.
+
+- `bin/platform.sh` centralizes every place the platforms differ. Each helper
+  tries the GNU form first and falls back to the POSIX/BSD equivalent:
+  `df -B1 --output=avail` → `df -Pk`; `stat -c` → `stat -f`; `date -d @` →
+  `date -r`; `sed -i` → `sed -i ''`.
+- CPU idle detection reads `/proc/<pid>/stat` on Linux and parses
+  `ps -o time=` elsewhere, normalized to centiseconds so `CPU_TICKS_MAX`
+  keeps the same meaning.
+- Scheduling is selected at install time: systemd units, launchd plists, or a
+  marked `crontab` block. The `SCHEDULE` string (`DOW-list HH:MM`) is consumed
+  directly by systemd's `OnCalendar`, and parsed into
+  `StartCalendarInterval` / cron fields for the others.
+- The one-time conversion prefers a secondary filesystem but degrades to
+  same-filesystem building when none exists, with an explicit warning.
 
 ## Safety properties
 
