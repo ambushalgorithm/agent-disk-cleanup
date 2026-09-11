@@ -1,0 +1,11 @@
+[Unit]
+Description=Prune opencode sessions and Docker build cache
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=@USER@
+Group=@GROUP@
+EnvironmentFile=-/etc/agent-disk-cleanup.conf
+TimeoutStartSec=infinity
+ExecStart=@SCRIPT_DIR@/opencode-cleanup.sh

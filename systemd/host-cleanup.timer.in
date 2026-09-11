@@ -1,0 +1,10 @@
+[Unit]
+Description=Recurring host disk cleanup
+
+[Timer]
+OnCalendar=@HOST_SCHEDULE@
+Persistent=true
+RandomizedDelaySec=@RANDOMIZED_DELAY@
+
+[Install]
+WantedBy=timers.target

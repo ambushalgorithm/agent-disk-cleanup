@@ -1,0 +1,10 @@
+[Unit]
+Description=Host disk cleanup (journald, apt)
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+EnvironmentFile=-/etc/agent-disk-cleanup.conf
+ExecStart=@HOST_SCRIPT@

@@ -1,0 +1,11 @@
+# Local configuration (may contain machine-specific paths)
+cleanup.conf
+
+# Conversion build area (should live on another filesystem, never committed)
+.agent-disk-cleanup-convert/
+*.build.*
+*.compact.*
+
+# Logs / scratch
+*.log
+*.tmp

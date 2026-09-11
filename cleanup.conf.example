@@ -1,0 +1,30 @@
+# agent-disk-cleanup configuration
+#
+# Copy to cleanup.conf (next to install.sh) and edit, or override via the
+# environment when running ./install.sh. Values here are used by install.sh to
+# render the systemd units and the runtime environment file.
+
+# Where the user-level scripts are installed.
+SCRIPT_DIR="$HOME/bin"
+
+# opencode session retention, in days.
+RETENTION_DAYS=2
+
+# systemd OnCalendar expressions (see `man systemd.time`).
+SCHEDULE="Mon,Wed,Fri,Sun 04:00"
+HOST_SCHEDULE="Mon,Wed,Fri,Sun 04:20"
+RANDOMIZED_DELAY=600
+
+# Directory used for the one-time off-root conversion. MUST be on a different
+# filesystem than the database and have free space ~= live database size.
+# Leave empty to auto-detect a secondary local mount.
+CONVERT_DIR=""
+
+# opencode database path. Leave empty to auto-detect (opencode db path / XDG).
+OPENCODE_DB=""
+
+# Host cleanup toggles.
+ENABLE_DOCKER_PRUNE=1
+ENABLE_JOURNALD=1
+JOURNAL_MAX_USE="500M"
+ENABLE_APT_CLEAN=1

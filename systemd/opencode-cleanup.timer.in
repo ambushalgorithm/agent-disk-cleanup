@@ -1,0 +1,10 @@
+[Unit]
+Description=Recurring opencode and Docker cleanup
+
+[Timer]
+OnCalendar=@SCHEDULE@
+Persistent=true
+RandomizedDelaySec=@RANDOMIZED_DELAY@
+
+[Install]
+WantedBy=timers.target
