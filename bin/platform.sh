@@ -57,6 +57,20 @@ fs_device() {
   esac
 }
 
+# fs_type <path> -> filesystem type name (e.g. ext4, tmpfs, fuse), or empty.
+# Linux: findmnt, then `df -P -T`. Elsewhere: best effort (often empty).
+fs_type() {
+  local p="$1" v=""
+  if have findmnt; then
+    v=$(findmnt -no FSTYPE --target "$p" 2>/dev/null) || v=""
+  fi
+  if [ -z "$v" ]; then
+    v=$(df -P -T "$p" 2>/dev/null | awk 'NR==2 {print $2}') || v=""
+    case "$v" in ''|Type|Filesystem) v="" ;; esac
+  fi
+  printf '%s\n' "$v"
+}
+
 # file_size <path> -> size in bytes. GNU stat -c %s, BSD stat -f %z.
 file_size() {
   local p="$1" v
@@ -93,7 +107,8 @@ sed_inplace() {
 
 # proc_cpu_centis <pid> -> cumulative CPU time in centiseconds (1/100 s).
 # Linux reads /proc/<pid>/stat (fields 14+15, in clock ticks); macOS/BSD parse
-# `ps -o time=`. Centiseconds keep the default CPU_TICKS_MAX=20 meaningful.
+# `ps -o time=`. Centiseconds keep the meaning of CPU_TICKS_MAX consistent
+# across platforms.
 proc_cpu_centis() {
   local pid="$1" v clk
   if [ -r "/proc/$pid/stat" ]; then
@@ -252,11 +267,15 @@ cron_block_merge() {
 # with at least <min_free_bytes> free, or returns 1 if none is available.
 find_secondary_fs() {
   local db_dir="$1" min_free="${2:-$(( 2 * 1024 * 1024 * 1024 ))}"
-  local db_dev mnt dev base avail
+  local db_dev mnt dev base avail fst
   db_dev=$(fs_device "$db_dir" 2>/dev/null) || return 1
   while IFS= read -r mnt; do
     case "$mnt" in
       /|/dev|/dev/*|/proc|/proc/*|/sys|/sys/*|/run|/run/*|/System/Volumes/*) continue ;;
+    esac
+    fst=$(fs_type "$mnt")
+    case "$fst" in
+      tmpfs|devtmpfs|ramfs|overlay|squashfs|nfs*|cifs|smb*|fuse*|9p|sshfs|afs|autofs) continue ;;
     esac
     dev=$(fs_device "$mnt" 2>/dev/null) || continue
     [ "$dev" = "$db_dev" ] && continue

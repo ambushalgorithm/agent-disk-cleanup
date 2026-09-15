@@ -66,7 +66,9 @@ The scripts target Linux, macOS, and the BSDs under bash 3.2+.
   `date -r`; `sed -i` → `sed -i ''`.
 - CPU idle detection reads `/proc/<pid>/stat` on Linux and parses
   `ps -o time=` elsewhere, normalized to centiseconds so `CPU_TICKS_MAX`
-  keeps the same meaning.
+  keeps the same meaning across platforms. The default is `150` centiseconds
+  over a 5s sample (idle opencode sits around 20, so a lower value caused every
+  run to skip as "busy").
 - Scheduling is selected at install time: systemd units, launchd plists, or a
   marked `crontab` block. The `SCHEDULE` string (`DOW-list HH:MM`) is consumed
   directly by systemd's `OnCalendar`, and parsed into

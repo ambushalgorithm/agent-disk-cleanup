@@ -131,13 +131,14 @@ the backup entirely. On failure the backup is always kept.
 | `SCRIPT_DIR` | `$HOME/bin` | Where user scripts are installed |
 | `RETENTION_DAYS` | `2` | opencode sessions older than this are pruned |
 | `KEEP_RECENT_SESSIONS` | `3` | Always keep at least this many recent top-level sessions (and their sub-sessions) |
+| `CPU_TICKS_MAX` | `150` | Idle gate: skip if opencode uses more CPU centiseconds than this per 5s |
 | `SCHEDULE` | `Mon,Wed,Fri,Sun 04:00` | opencode/Docker job schedule (`DOW-list HH:MM`) |
 | `HOST_SCHEDULE` | `Mon,Wed,Fri,Sun 04:20` | host cleanup schedule |
 | `RANDOMIZED_DELAY` | `600` | systemd jitter in seconds |
 | `CONVERT_DIR` | auto-detected | Off-root build dir for the one-time conversion (empty = auto) |
 | `OPENCODE_DB` | auto-detected | Database path (`opencode db path` / XDG) |
 | `CONVERT` | `0` | Let the scheduled job run the one-time conversion |
-| `ENABLE_DOCKER_PRUNE` | `1` | Run `docker builder prune -af` |
+| `ENABLE_DOCKER_PRUNE` | `1` | Run `docker builder prune -af` and `docker image prune -af` |
 | `ENABLE_JOURNALD` | `1` | Cap + vacuum `journald` |
 | `JOURNAL_MAX_USE` | `500M` | `SystemMaxUse` for `journald` |
 | `ENABLE_APT_CLEAN` | `1` | Run `apt-get clean` |

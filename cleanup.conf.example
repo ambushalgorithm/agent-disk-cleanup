@@ -14,6 +14,11 @@ RETENTION_DAYS=2
 # (and their sub-sessions), regardless of retention.
 KEEP_RECENT_SESSIONS=3
 
+# Idle detection: skip when opencode consumes more than this many CPU centiseconds
+# in a CPU_SAMPLE-second window. Idle opencode sits around 20; real work is in the
+# hundreds, so 150 avoids false "busy" skips.
+CPU_TICKS_MAX=150
+
 # Schedule. "DOW-list HH:MM" (e.g. "Mon,Wed,Fri,Sun 04:00" or "daily 04:00").
 # Used directly as a systemd OnCalendar expression, and parsed into
 # StartCalendarInterval (launchd) / cron fields on other platforms.

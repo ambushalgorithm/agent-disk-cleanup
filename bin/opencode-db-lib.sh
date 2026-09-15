@@ -54,7 +54,7 @@ opencode_cpu_centis() {
 #          10 = skipped because opencode is active
 #          1  = error
 stop_opencode() {
-  local idle_minutes="${1:-15}" cpu_sample="${2:-5}" cpu_centis_max="${3:-20}"
+  local idle_minutes="${1:-15}" cpu_sample="${2:-5}" cpu_centis_max="${3:-150}"
   local stop_wait="${4:-30}" recheck="${5:-10}"
   local last_ms now_ms a b i
 
