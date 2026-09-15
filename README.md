@@ -132,6 +132,9 @@ the backup entirely. On failure the backup is always kept.
 | `RETENTION_DAYS` | `2` | opencode sessions older than this are pruned |
 | `KEEP_RECENT_SESSIONS` | `3` | Always keep at least this many recent top-level sessions (and their sub-sessions) |
 | `CPU_TICKS_MAX` | `150` | Idle gate: skip if opencode uses more CPU centiseconds than this per 5s |
+| `REBUILD_FREELIST_PAGES` | `100000` | Rebuild off-root when the freelist exceeds this many pages |
+| `REBUILD_FREELIST_PCT` | `25` | …or when the freelist is more than this % of the file |
+| `VACUUM_PAGES_PER_RUN` | `50000` | Pages freed per run via bounded `incremental_vacuum` |
 | `SCHEDULE` | `Mon,Wed,Fri,Sun 04:00` | opencode/Docker job schedule (`DOW-list HH:MM`) |
 | `HOST_SCHEDULE` | `Mon,Wed,Fri,Sun 04:20` | host cleanup schedule |
 | `RANDOMIZED_DELAY` | `600` | systemd jitter in seconds |

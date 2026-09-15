@@ -171,3 +171,19 @@ prune_sessions() {
   fi
   rm -f "$ids_file"
 }
+
+# needs_rebuild <freelist_pages> <page_count>
+# Returns 0 when a full off-root rebuild is preferable to incremental_vacuum:
+# the freelist is huge in absolute terms or represents a large fraction of the
+# file. Freeing millions of pages with incremental_vacuum runs as one giant
+# transaction (huge WAL, very slow), so rebuild instead in that case.
+needs_rebuild() {
+  local freelist="$1" total="$2"
+  case "${freelist:-}" in ''|*[!0-9]*) return 1 ;; esac
+  case "${total:-}" in ''|*[!0-9]*) return 1 ;; esac
+  [ "$freelist" -gt 0 ] || return 1
+  [ "$total" -gt 0 ] || return 1
+  [ "$freelist" -gt "${REBUILD_FREELIST_PAGES:-100000}" ] && return 0
+  [ $(( freelist * 100 / total )) -gt "${REBUILD_FREELIST_PCT:-25}" ] && return 0
+  return 1
+}

@@ -45,6 +45,10 @@ case "$rc" in
   *) exit "$rc" ;;
 esac
 
+# Fold any WAL into the database and truncate it before rebuilding. A large WAL
+# (e.g. left by an interrupted incremental_vacuum) would otherwise be read here.
+sqlite3 -cmd ".timeout 5000" "$DB" "PRAGMA wal_checkpoint(TRUNCATE);" >/dev/null 2>&1 || true
+
 mkdir -p "$BUILD_DIR" || { log "cannot create build dir: $BUILD_DIR"; exit 1; }
 
 # The conversion rebuilds a full second copy. To guarantee the DB filesystem

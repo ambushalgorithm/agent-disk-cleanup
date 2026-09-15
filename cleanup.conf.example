@@ -19,6 +19,14 @@ KEEP_RECENT_SESSIONS=3
 # hundreds, so 150 avoids false "busy" skips.
 CPU_TICKS_MAX=150
 
+# Space reclaim strategy. A full off-root rebuild is used when the freed-page
+# count exceeds REBUILD_FREELIST_PAGES or REBUILD_FREELIST_PCT% of the file;
+# otherwise up to VACUUM_PAGES_PER_RUN pages are freed per run with
+# incremental_vacuum (bounded so the WAL stays small).
+REBUILD_FREELIST_PAGES=100000
+REBUILD_FREELIST_PCT=25
+VACUUM_PAGES_PER_RUN=50000
+
 # Schedule. "DOW-list HH:MM" (e.g. "Mon,Wed,Fri,Sun 04:00" or "daily 04:00").
 # Used directly as a systemd OnCalendar expression, and parsed into
 # StartCalendarInterval (launchd) / cron fields on other platforms.

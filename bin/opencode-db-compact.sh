@@ -41,10 +41,19 @@ log "auto_vacuum=$AV"
 
 if [ "$AV" = "2" ]; then
   FREELIST=$(sqlite3 -cmd ".timeout 5000" "$DB" "PRAGMA freelist_count;")
-  log "freelist pages: $FREELIST; reclaiming with incremental_vacuum (no temp copy)"
-  if [ "$FREELIST" -gt 0 ]; then
-    sqlite3 -cmd ".timeout 5000" "$DB" "PRAGMA incremental_vacuum;" >/dev/null
-    sqlite3 -cmd ".timeout 5000" "$DB" "PRAGMA wal_checkpoint(TRUNCATE);" >/dev/null
+  PAGE_COUNT=$(sqlite3 -cmd ".timeout 5000" "$DB" "PRAGMA page_count;")
+  log "freelist pages: ${FREELIST} / ${PAGE_COUNT}"
+  if [ "${FREELIST:-0}" -gt 0 ]; then
+    if needs_rebuild "$FREELIST" "$PAGE_COUNT"; then
+      log "freelist is large; rebuilding off-root (fast) instead of incremental_vacuum"
+      sqlite3 -cmd ".timeout 5000" "$DB" "PRAGMA wal_checkpoint(TRUNCATE);" >/dev/null || true
+      "$DIR/opencode-db-convert.sh"
+    else
+      PAGES="${VACUUM_PAGES_PER_RUN:-50000}"
+      log "reclaiming up to ${PAGES} pages with bounded incremental_vacuum"
+      sqlite3 -cmd ".timeout 5000" "$DB" "PRAGMA incremental_vacuum(${PAGES});" >/dev/null
+      sqlite3 -cmd ".timeout 5000" "$DB" "PRAGMA wal_checkpoint(TRUNCATE);" >/dev/null
+    fi
   fi
   log "done:"
   ls -lh "$DB"

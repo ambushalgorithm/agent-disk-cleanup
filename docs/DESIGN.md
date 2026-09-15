@@ -27,9 +27,17 @@ To actually shrink the file, SQLite provides:
    decreases. The result is verified (`PRAGMA integrity_check`, `auto_vacuum=2`)
    before and after the swap.
 
-2. **Prune incrementally forever after.** Each scheduled run deletes sessions
-   older than `RETENTION_DAYS`, then calls `PRAGMA incremental_vacuum` followed by
-   `PRAGMA wal_checkpoint(TRUNCATE)`. No temporary file, no second copy.
+2. **Reclaim after each run.** Each scheduled run deletes sessions older than
+   `RETENTION_DAYS`, then reclaims freed pages. The method is chosen by freelist
+   size, because `PRAGMA incremental_vacuum` (no argument) frees the *entire*
+   freelist as a single transaction: for a freelist that is most of the file that
+   transaction is enormous, cannot checkpoint, and balloons the WAL. Instead:
+
+   - **Small freelist** → `PRAGMA incremental_vacuum(VACUUM_PAGES_PER_RUN)` (bounded,
+     so the WAL stays small), then `PRAGMA wal_checkpoint(TRUNCATE)`.
+   - **Large freelist** (more than `REBUILD_FREELIST_PAGES`, or more than
+     `REBUILD_FREELIST_PCT`% of the file) → an off-root rebuild
+     (`opencode-db-convert.sh`), which compacts the live data quickly.
 
    A retention floor applies: the `KEEP_RECENT_SESSIONS` (default 3) most recent
    top-level sessions (`parent_id IS NULL`) by `time_updated`, plus any sub-session
