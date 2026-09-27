@@ -40,9 +40,10 @@ To actually shrink the file, SQLite provides:
      (`opencode-db-convert.sh`), which compacts the live data quickly.
 
    A retention floor applies: the `KEEP_RECENT_SESSIONS` (default 3) most recent
-   top-level sessions (`parent_id IS NULL`) by `time_updated`, plus any sub-session
+   top-level sessions (`parent_id IS NULL`) **per directory**, plus any sub-session
    whose parent is one of them, are excluded from deletion even if they are older
-   than the retention window. This guarantees recent work is never pruned.
+   than the retention window. This guarantees each directory keeps its own recent
+   work, not just the globally most recent sessions.
 
 ## Idle gating
 

@@ -121,13 +121,19 @@ prune_sessions() {
   keep="${KEEP_RECENT_SESSIONS:-3}"
   cut=$(( ( $(date +%s) - days*86400 ) * 1000 ))
   log "Retention ${days}d; pruning sessions updated before $(epoch_to_human $((cut/1000)) '%Y-%m-%d %H:%M')"
-  log "keeping the ${keep} most recent top-level session(s) (+ their sub-sessions)"
+  log "keeping the ${keep} most recent top-level session(s) per directory (+ their sub-sessions)"
 
-  # Protected set: the N most recent top-level sessions, plus any sub-session
-  # whose parent is one of them, so a preserved parent is never left with a
-  # pruned child.
+  # Protected set: the N most recent top-level sessions PER DIRECTORY, plus any
+  # sub-session whose parent is one of them, so a preserved parent is never left
+  # with a pruned child. Per-directory keeps recent history for every project,
+  # not just the globally most recent ones.
   local keep_cte="WITH keep AS (
-      SELECT id FROM session WHERE parent_id IS NULL ORDER BY time_updated DESC, id DESC LIMIT ${keep}
+      SELECT id FROM (
+        SELECT id, row_number() OVER (
+          PARTITION BY directory ORDER BY time_updated DESC, id DESC
+        ) rn
+        FROM session WHERE parent_id IS NULL
+      ) WHERE rn <= ${keep}
     ),
     protected AS (
       SELECT id FROM keep

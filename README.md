@@ -38,7 +38,7 @@ Safety rails in every script:
   the database untouched.
 - A trap removes temporary files (and restores the database if interrupted
   mid-swap).
-- The `KEEP_RECENT_SESSIONS` most recent top-level sessions (and their
+- The `KEEP_RECENT_SESSIONS` most recent top-level sessions **per directory** (and their
   sub-sessions) are **never** pruned, even when older than the retention window.
 - Idempotent; re-running is safe.
 
@@ -130,7 +130,7 @@ the backup entirely. On failure the backup is always kept.
 | --- | --- | --- |
 | `SCRIPT_DIR` | `$HOME/bin` | Where user scripts are installed |
 | `RETENTION_DAYS` | `2` | opencode sessions older than this are pruned |
-| `KEEP_RECENT_SESSIONS` | `3` | Always keep at least this many recent top-level sessions (and their sub-sessions) |
+| `KEEP_RECENT_SESSIONS` | `3` | Always keep at least this many recent top-level sessions **per directory** (and their sub-sessions) |
 | `CPU_TICKS_MAX` | `150` | Idle gate: skip if opencode uses more CPU centiseconds than this per 5s |
 | `REBUILD_FREELIST_PAGES` | `100000` | Rebuild off-root when the freelist exceeds this many pages |
 | `REBUILD_FREELIST_PCT` | `25` | …or when the freelist is more than this % of the file |
