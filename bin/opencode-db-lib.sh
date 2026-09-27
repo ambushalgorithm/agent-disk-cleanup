@@ -118,7 +118,7 @@ stop_opencode() {
 # Reads: DB, BATCH, KEEP_RECENT_SESSIONS
 prune_sessions() {
   local days="$1" cut total ids_file keep
-  keep="${KEEP_RECENT_SESSIONS:-3}"
+  keep="${KEEP_RECENT_SESSIONS:-5}"
   cut=$(( ( $(date +%s) - days*86400 ) * 1000 ))
   log "Retention ${days}d; pruning sessions updated before $(epoch_to_human $((cut/1000)) '%Y-%m-%d %H:%M')"
   log "keeping the ${keep} most recent top-level session(s) per directory (+ their sub-sessions)"

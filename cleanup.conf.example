@@ -12,7 +12,7 @@ RETENTION_DAYS=2
 
 # Always keep at least this many of the most recent top-level opencode sessions
 # PER DIRECTORY (and their sub-sessions), regardless of retention.
-KEEP_RECENT_SESSIONS=3
+KEEP_RECENT_SESSIONS=5
 
 # Idle detection: skip when opencode consumes more than this many CPU centiseconds
 # in a CPU_SAMPLE-second window. Idle opencode sits around 20; real work is in the

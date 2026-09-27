@@ -14,7 +14,7 @@
 #   REPO                 repo root (default: this script's directory)
 #   OPENCODE_DB          database path (default: `opencode db path` / XDG)
 #   RETENTION_DAYS       default 2
-#   KEEP_RECENT_SESSIONS default 3
+#   KEEP_RECENT_SESSIONS default 5
 #   CONVERT              default 1 (perform the one-time conversion)
 #   BACKUP               default 1 (consistent sqlite backup before changes)
 #   KEEP_BACKUP          default 0 (backup is deleted after a successful run)
@@ -37,7 +37,7 @@ fi
 
 COMPACT="$ADC_BIN/opencode-db-compact.sh"
 RETENTION_DAYS="${RETENTION_DAYS:-2}"
-KEEP_RECENT_SESSIONS="${KEEP_RECENT_SESSIONS:-3}"
+KEEP_RECENT_SESSIONS="${KEEP_RECENT_SESSIONS:-5}"
 CONVERT="${CONVERT:-1}"
 BACKUP="${BACKUP:-1}"
 KEEP_BACKUP="${KEEP_BACKUP:-0}"
