@@ -1,0 +1,25 @@
+# agent-disk-cleanup per-directory retention policies
+#
+# Copy to policies.conf (next to install.sh) and edit, or point POLICIES_FILE at
+# it. Each non-comment line is:
+#
+#     <glob>  <keep>  <inactive_min>  <days>
+#
+#   keep          the N most recent top-level sessions in a matching directory
+#                 are kept (0 = keep none). Their sub-sessions are kept too.
+#   inactive_min  never prune a session idle for fewer than this many minutes.
+#                 This protects sessions that are open/frozen but not writing.
+#   days          age cutoff in days (0 = count-only, no time floor).
+#
+# The FIRST matching glob wins, so put specific rules before the catch-all.
+# Directories with no matching rule use the cleanup.conf defaults
+# (KEEP_RECENT_SESSIONS / INACTIVE_MINUTES / RETENTION_DAYS).
+#
+# Sessions referenced by a running opencode process (by session id in argv or by
+# working directory) are always protected, regardless of these rules.
+
+# Disposable agent working directories: keep nothing once idle for 48h.
+*/working-directories/slot-*   0   2880   0
+
+# Everything else: keep the last 10 sessions per directory, 48h idle grace.
+*                              10  2880   0

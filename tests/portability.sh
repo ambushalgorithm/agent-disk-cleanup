@@ -64,8 +64,8 @@ list_opencode_pids >/dev/null 2>&1 && ok "list_opencode_pids" || no "list_openco
 
 echo "# script syntax"
 for f in bin/platform.sh bin/opencode-db-lib.sh bin/opencode-db-compact.sh \
-         bin/opencode-db-convert.sh bin/opencode-cleanup.sh bin/host-cleanup.sh \
-         run-cleanup.sh install.sh; do
+         bin/opencode-db-convert.sh bin/opencode-db-list.sh bin/opencode-cleanup.sh \
+         bin/host-cleanup.sh run-cleanup.sh install.sh; do
   if bash -n "$ROOT/$f" 2>/dev/null; then ok "bash -n $f"; else no "bash -n $f"; fi
 done
 

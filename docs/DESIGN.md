@@ -39,23 +39,56 @@ To actually shrink the file, SQLite provides:
      `REBUILD_FREELIST_PCT`% of the file) → an off-root rebuild
      (`opencode-db-convert.sh`), which compacts the live data quickly.
 
-   A retention floor applies: the `KEEP_RECENT_SESSIONS` (default 5) most recent
-   top-level sessions (`parent_id IS NULL`) **per directory**, plus any sub-session
-   whose parent is one of them, are excluded from deletion even if they are older
-   than the retention window. This guarantees each directory keeps its own recent
-   work, not just the globally most recent sessions.
+   A **retention floor** applies per directory. By default the
+   `KEEP_RECENT_SESSIONS` (default 10) most recent top-level sessions
+   (`parent_id IS NULL`) **per directory**, plus any sub-session whose parent is
+   one of them, are excluded from deletion. A `policies.conf` refines this:
+   each directory matches the first glob rule giving `keep`, `inactive_min`, and
+   `days`, so disposable directories (e.g. agent `working-directories/slot-*`)
+   can keep nothing once they have been idle. See **Per-directory policies**.
 
-## Idle gating
+## Per-directory policies
 
-Pruning requires exclusive-ish access and must not interrupt active work. Before
-touching the database, `stop_opencode` checks:
+`POLICIES_FILE` (`policies.conf`) is a line-based table, first match wins:
 
-- the most recent `session.time_updated` timestamp (idle for `IDLE_MINUTES`), and
-- CPU ticks consumed by `opencode` processes over a short sample.
+```
+# <glob>  <keep>  <inactive_min>  <days>
+*/working-directories/slot-*   0   2880   0
+*                              10  2880   0
+```
 
-If either indicates activity, the run skips and leaves opencode running. Only
-when idle does it send `SIGTERM`, wait, fall back to `SIGKILL`, and verify no
-process still holds the database (via `pgrep` and `lsof`).
+- `keep` — the N most recent top-level sessions in a matching directory (and
+  their sub-sessions) are protected; `0` protects none.
+- `inactive_min` — a session idle for fewer than this many minutes is protected,
+  guarding open/frozen-but-quiet sessions.
+- `days` — age cutoff; `0` means count-only (no time floor).
+
+Directories with no matching rule use the defaults (`KEEP_RECENT_SESSIONS`,
+`INACTIVE_MINUTES`, `RETENTION_DAYS`). The rules are applied by assigning each
+directory a policy in a temp table, then a single ranked pass
+(`row_number() OVER (PARTITION BY directory …)`) picks the protected set and the
+victims. `opencode-db-list.sh` prints each directory's counts, dates, and the
+policy it will receive.
+
+## Never terminate opencode
+
+Cleanup sends **no signals**. opencode persists no "session is open" flag, and
+`session.time_updated` is only written on prompt submit / metadata changes (not
+on open, navigation, or streaming), so recency alone would delete a session you
+have open but are not typing into. Instead the pruner protects everything a live
+process references:
+
+- session ids found on any command line (`opencode -s ses_…`), and
+- every session whose `directory` equals the working directory of a running
+  opencode process (the `cwd` equals `session.directory`), and
+- sessions with an admitted-but-unpromoted prompt (`session_input`), and
+- sub-sessions of any protected parent.
+
+Recurring pruning therefore runs concurrently with opencode. The only operation
+that still needs opencode closed is the exclusive off-root rebuild/conversion
+(`VACUUM INTO` + swap); it is skipped while opencode runs and retried on a later
+schedule.
+
 
 ## Sidecar cleanups
 
@@ -87,6 +120,9 @@ The scripts target Linux, macOS, and the BSDs under bash 3.2+.
 
 ## Safety properties
 
+- **Non-disruptive**: never signals opencode; anything a live process references
+  (by session id or working directory) is protected, so open/frozen sessions
+  survive.
 - **No growth on the database filesystem**: conversion builds off-root and swaps
   by delete-then-copy; recurring prunes use `incremental_vacuum`.
 - **Bounded**: pre-flight free-space checks abort before any work if space is

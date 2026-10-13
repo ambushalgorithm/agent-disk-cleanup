@@ -12,8 +12,6 @@ ALLOW_SAME_FS="${ALLOW_SAME_FS:-0}"
 IDLE_MINUTES="${IDLE_MINUTES:-15}"
 CPU_SAMPLE="${CPU_SAMPLE:-5}"
 CPU_TICKS_MAX="${CPU_TICKS_MAX:-150}"
-STOP_WAIT="${STOP_WAIT:-30}"
-STOP_RECHECK="${STOP_RECHECK:-10}"
 
 if [ ! -f "$DB" ]; then
   log "database not found: $DB"
@@ -36,7 +34,7 @@ fi
 BUILD_DIR="$CONVERT_DIR"
 
 set +e
-stop_opencode "$IDLE_MINUTES" "$CPU_SAMPLE" "$CPU_TICKS_MAX" "$STOP_WAIT" "$STOP_RECHECK"
+stop_opencode "$IDLE_MINUTES" "$CPU_SAMPLE" "$CPU_TICKS_MAX"
 rc=$?
 set -e
 case "$rc" in

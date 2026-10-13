@@ -7,12 +7,23 @@
 # Where the user-level scripts are installed.
 SCRIPT_DIR="$HOME/bin"
 
-# opencode session retention, in days.
-RETENTION_DAYS=2
+# opencode session retention, in days. 0 = no time floor (count-only).
+RETENTION_DAYS=0
 
 # Always keep at least this many of the most recent top-level opencode sessions
 # PER DIRECTORY (and their sub-sessions), regardless of retention.
-KEEP_RECENT_SESSIONS=5
+KEEP_RECENT_SESSIONS=10
+
+# Never prune a session idle for fewer than this many minutes. 0 disables the
+# idle guard. Per-directory rules in POLICIES_FILE override this default.
+INACTIVE_MINUTES=0
+
+# Per-directory policy table (see docs/DESIGN.md). The most specific matching
+# rule wins; the values above are the defaults for directories with no rule.
+# A rule is: <glob>  <keep>  <inactive_min>  <days>
+# Example: aggressively clear disposable agent working directories.
+#   */working-directories/slot-*  0  2880  0
+POLICIES_FILE=""
 
 # Idle detection: skip when opencode consumes more than this many CPU centiseconds
 # in a CPU_SAMPLE-second window. Idle opencode sits around 20; real work is in the

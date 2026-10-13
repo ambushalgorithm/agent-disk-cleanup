@@ -30,16 +30,19 @@ fill the disk instead.
 
 Safety rails in every script:
 
-- Only runs when the opencode database is idle (no recent session activity and
-  near-zero CPU); otherwise it skips and leaves opencode running.
-- Graceful `SIGTERM`, then `SIGKILL` after a timeout, then verifies the database
-  is no longer open.
+- **Never terminates opencode.** Cleanup sends no signals. Anything a running
+  opencode process references — a session id on its command line, or its
+  working directory — is **never** pruned, so open or frozen sessions survive.
+- Pruning runs concurrently with opencode. Only the one-time off-root
+  conversion needs it closed, and that is deferred until it is.
 - `VACUUM`/conversion is refused unless enough free space exists; aborts leave
   the database untouched.
 - A trap removes temporary files (and restores the database if interrupted
   mid-swap).
-- The `KEEP_RECENT_SESSIONS` most recent top-level sessions **per directory** (and their
-  sub-sessions) are **never** pruned, even when older than the retention window.
+- **Per-directory policies** (`policies.conf`) decide retention. By default the
+  `KEEP_RECENT_SESSIONS` (default 10) most recent top-level sessions **per
+  directory** (and their sub-sessions) are kept; rules can keep nothing in
+  disposable directories (e.g. agent working dirs) once they have been idle.
 - Idempotent; re-running is safe.
 
 ## Contents
@@ -47,17 +50,19 @@ Safety rails in every script:
 | Path | Purpose |
 | --- | --- |
 | `bin/platform.sh` | Portable helpers (OS detection, `df`/`stat`/`date`/CPU fallbacks, scheduling) |
-| `bin/opencode-db-lib.sh` | Shared helpers (logging, idle detection, prune) |
+| `bin/opencode-db-lib.sh` | Shared helpers (logging, live-session protection, per-directory policies, prune) |
 | `bin/opencode-db-compact.sh` | Recurring prune + `incremental_vacuum` |
+| `bin/opencode-db-list.sh` | List directories with their session counts and policy |
 | `bin/opencode-db-convert.sh` | One-time off-root conversion to incremental |
 | `bin/opencode-cleanup.sh` | Docker builder prune, then the DB prune |
 | `bin/host-cleanup.sh` | journald/apt (Linux) or `periodic` (macOS) |
-| `run-cleanup.sh` | One-shot runner: backup + prune + one-time conversion |
+| `run-cleanup.sh` | One-shot runner: backup + prune + optional one-time conversion |
 | `systemd/*.in` | Unit templates rendered by the installer |
 | `launchd/*.plist.in` | launchd agent/daemon templates rendered by the installer |
 | `install.sh` | Idempotent installer / uninstaller (systemd/launchd/cron) |
 | `cleanup.conf.example` | Configuration reference |
-| `tests/` | Cross-platform helper and prune smoke tests |
+| `policies.conf.example` | Per-directory retention policy reference |
+| `tests/` | Cross-platform helper, prune, policy, and protection tests |
 | `docs/DESIGN.md` | Design notes and rationale |
 
 ## Platform support
@@ -113,12 +118,15 @@ consistent backup, prunes, and performs the one-time conversion:
 
 ```bash
 ./run-cleanup.sh                  # backup + prune + convert
-RETENTION_DAYS=7 ./run-cleanup.sh # change retention for this run
-FORCE=1 ./run-cleanup.sh          # allow stopping a running opencode (when idle)
+./run-cleanup.sh --dry-run        # show what would be pruned, change nothing
+./run-cleanup.sh --list           # list directories and their policy
+./run-cleanup.sh --list --sizes   # ...with estimated database MB per directory
+RETENTION_DAYS=7 ./run-cleanup.sh # change the default retention for this run
 ```
 
-It refuses to run while opencode is active unless `FORCE=1`, and even then only
-stops it once the idle gate is satisfied. The backup is removed automatically
+Pruning is safe while opencode is running: it protects anything a live opencode
+process references and never sends signals. The one-time conversion still needs
+opencode closed and is deferred until it is. The backup is removed automatically
 after a successful run; set `KEEP_BACKUP=1` to retain it, or `BACKUP=0` to skip
 the backup entirely. On failure the backup is always kept.
 
@@ -129,9 +137,11 @@ the backup entirely. On failure the backup is always kept.
 | Variable | Default | Meaning |
 | --- | --- | --- |
 | `SCRIPT_DIR` | `$HOME/bin` | Where user scripts are installed |
-| `RETENTION_DAYS` | `2` | opencode sessions older than this are pruned |
-| `KEEP_RECENT_SESSIONS` | `5` | Always keep at least this many recent top-level sessions **per directory** (and their sub-sessions) |
-| `CPU_TICKS_MAX` | `150` | Idle gate: skip if opencode uses more CPU centiseconds than this per 5s |
+| `RETENTION_DAYS` | `0` | default age cutoff in days (`0` = count-only, no time floor) |
+| `KEEP_RECENT_SESSIONS` | `10` | default: always keep this many recent top-level sessions **per directory** (and their sub-sessions) |
+| `INACTIVE_MINUTES` | `0` | default idle grace before a session becomes eligible |
+| `POLICIES_FILE` | auto | per-directory policy table (see `policies.conf.example`) |
+| `CPU_TICKS_MAX` | `150` | CPU sample threshold used when gating exclusive operations |
 | `REBUILD_FREELIST_PAGES` | `100000` | Rebuild off-root when the freelist exceeds this many pages |
 | `REBUILD_FREELIST_PCT` | `25` | …or when the freelist is more than this % of the file |
 | `VACUUM_PAGES_PER_RUN` | `50000` | Pages freed per run via bounded `incremental_vacuum` |
@@ -158,8 +168,8 @@ CONVERT=1 "$HOME/bin/opencode-db-compact.sh"
 ```
 
 Or set `CONVERT=1` in `cleanup.conf` before installing to have the scheduled job
-perform it on the first idle run (it stops opencode only when no session has
-been active for `IDLE_MINUTES` and CPU use is low).
+perform it on the first run where opencode is closed. The scheduled job never
+stops opencode, so the conversion is simply deferred until then.
 
 Requirements:
 
@@ -177,13 +187,14 @@ After conversion, every scheduled run reclaims space in place.
 ```bash
 bash tests/portability.sh   # helper + syntax smoke tests
 bash tests/prune.sh         # prune/cascade/retention-floor functional test
+bash tests/policies.sh      # per-directory policies + live-session protection
 ./install.sh --dry-run      # preview scheduler changes
 ```
 
 ## Troubleshooting
 
-- **"opencode active; skipping"** — the job intentionally skips when opencode is
-  busy or recently active. It retries on the next schedule.
+- **"opencode running; deferred rebuild/conversion"** — routine pruning already
+  ran; the exclusive rebuild/conversion waits until opencode is closed.
 - **"not incremental; skipping vacuum"** — run the one-time conversion (above);
   no growth occurs until then.
 - **Docker prune**: set `ENABLE_DOCKER_PRUNE=0` to disable.

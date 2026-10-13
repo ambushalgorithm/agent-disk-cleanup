@@ -66,10 +66,17 @@ JOURNAL_MAX_USE="500M"
 ENABLE_APT_CLEAN=1
 ENABLE_MACOS_CLEANUP=0
 CONVERT=0
+POLICIES_FILE=""
+INACTIVE_MINUTES=0
 
 if [ -f "$REPO_DIR/cleanup.conf" ]; then
   # shellcheck source=/dev/null
   source "$REPO_DIR/cleanup.conf"
+fi
+
+# Default the policy table to an installed policies.conf when one is present.
+if [ -z "$POLICIES_FILE" ] && [ -f "$REPO_DIR/policies.conf" ]; then
+  POLICIES_FILE="$SCRIPT_DIR/policies.conf"
 fi
 
 UNIT_DIR="/etc/systemd/system"
@@ -98,6 +105,8 @@ env_lines() {
   printf 'PATH=%s\n' "$SERVICE_PATH"
   printf 'RETENTION_DAYS=%s\n' "$RETENTION_DAYS"
   printf 'KEEP_RECENT_SESSIONS=%s\n' "$KEEP_RECENT_SESSIONS"
+  printf 'INACTIVE_MINUTES=%s\n' "$INACTIVE_MINUTES"
+  printf 'POLICIES_FILE=%s\n' "$POLICIES_FILE"
   printf 'CPU_TICKS_MAX=%s\n' "$CPU_TICKS_MAX"
   printf 'REBUILD_FREELIST_PAGES=%s\n' "$REBUILD_FREELIST_PAGES"
   printf 'REBUILD_FREELIST_PCT=%s\n' "$REBUILD_FREELIST_PCT"
@@ -209,7 +218,8 @@ if [ "$UNINSTALL" = "1" ]; then
     log "removing installed scripts and env file"
     run rm -f "$SCRIPT_DIR/opencode-db-lib.sh" "$SCRIPT_DIR/opencode-db-compact.sh" \
                "$SCRIPT_DIR/opencode-db-convert.sh" "$SCRIPT_DIR/opencode-cleanup.sh" \
-               "$SCRIPT_DIR/platform.sh" "$SCRIPT_DIR/run-cleanup.sh"
+               "$SCRIPT_DIR/opencode-db-list.sh" "$SCRIPT_DIR/platform.sh" \
+               "$SCRIPT_DIR/run-cleanup.sh" "$SCRIPT_DIR/policies.conf"
     run $SUDO rm -rf "$HOST_LIB_DIR" "$ENV_FILE"
   fi
   log "uninstall complete"
@@ -258,10 +268,14 @@ trap 'rm -rf "$tmp"' EXIT
 
 log "installing scripts to $SCRIPT_DIR"
 run mkdir -p "$SCRIPT_DIR"
-for f in platform.sh opencode-db-lib.sh opencode-db-compact.sh opencode-db-convert.sh opencode-cleanup.sh; do
+for f in platform.sh opencode-db-lib.sh opencode-db-compact.sh opencode-db-convert.sh opencode-cleanup.sh opencode-db-list.sh; do
   run install -m 0755 "$REPO_DIR/bin/$f" "$SCRIPT_DIR/$f"
 done
 run install -m 0755 "$REPO_DIR/run-cleanup.sh" "$SCRIPT_DIR/run-cleanup.sh"
+if [ -f "$REPO_DIR/policies.conf" ]; then
+  log "installing policies.conf to $SCRIPT_DIR"
+  run install -m 0644 "$REPO_DIR/policies.conf" "$SCRIPT_DIR/policies.conf"
+fi
 
 log "installing host-cleanup to $HOST_LIB_DIR"
 run $SUDO mkdir -p "$HOST_LIB_DIR"

@@ -144,6 +144,21 @@ list_opencode_pids() {
   ps -Ao pid=,comm= 2>/dev/null | awk '{ n = split($2, a, "/"); if (a[n] == "opencode") print $1 }'
 }
 
+# proc_cwd <pid> -> current working directory of <pid>, or empty if unknown.
+# Linux reads the /proc/<pid>/cwd symlink; macOS/BSD use lsof.
+proc_cwd() {
+  local pid="$1" v
+  if [ -L "/proc/$pid/cwd" ]; then
+    v=$(readlink "/proc/$pid/cwd" 2>/dev/null) || v=""
+    if [ -n "$v" ]; then printf '%s\n' "$v"; return 0; fi
+  fi
+  if have lsof; then
+    v=$(lsof -a -p "$pid" -d cwd -Fn 2>/dev/null | sed -n 's/^n//p' | head -1)
+    if [ -n "$v" ]; then printf '%s\n' "$v"; return 0; fi
+  fi
+  return 1
+}
+
 # resolve_home <user> -> home directory.
 resolve_home() {
   local u="$1"
