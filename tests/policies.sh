@@ -99,7 +99,7 @@ eq "idle rule wins"   "$(policy_for_dir /x/idle-1)"     "0 600 0"
 eq "catch-all applies" "$(policy_for_dir /x/other)"     "1 0 0"
 
 # with no policies file, the passed defaults apply
-unset POLICIES_FILE
+POLICIES_FILE=/nonexistent
 load_policies 9 0 0
 eq "defaults with no file" "$(policy_for_dir /x/other)" "9 0 0"
 

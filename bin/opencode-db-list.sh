@@ -85,5 +85,5 @@ while IFS='	' read -r dir n mn mx; do
   fi
 done
 
-printf '\n(policy: default keep=%s inactive=%sm days=%s; POLICIES_FILE=%s)\n' \
-  "$def_keep" "$def_inactive" "$def_days" "${POLICIES_FILE:-<auto/no policies.conf>}"
+printf '\n(policies: %s; fallback keep=%s inactive=%sm days=%s)\n' \
+  "${POL_FILE_RESOLVED:-none}" "$def_keep" "$def_inactive" "$def_days"

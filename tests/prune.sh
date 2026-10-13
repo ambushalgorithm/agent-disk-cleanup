@@ -9,6 +9,8 @@ set -uo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 # shellcheck source=/dev/null
 . "$ROOT/bin/opencode-db-lib.sh"
+# Keep the test hermetic: never pick up an ambient policies.conf.
+POLICIES_FILE=/nonexistent
 
 DB="$(mktemp -u).db"
 trap 'rm -f "$DB" "$DB-wal" "$DB-shm"' EXIT

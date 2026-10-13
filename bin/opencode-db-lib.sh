@@ -132,6 +132,7 @@ sql_quote() { printf "'%s'" "$(printf '%s' "${1:-}" | sed "s/'/''/g")"; }
 load_policies() {
   POL_PATTERN=(); POL_KEEP=(); POL_INACTIVE=(); POL_DAYS=()
   POL_DEF_KEEP="${1:-0}"; POL_DEF_INACTIVE="${2:-0}"; POL_DEF_DAYS="${3:-0}"
+  POL_FILE_RESOLVED=""
   local f="${POLICIES_FILE:-}"
   if [ -z "$f" ]; then
     # Auto-detect a policies.conf next to the repo/install tree.
@@ -141,6 +142,8 @@ load_policies() {
     done
   fi
   [ -n "$f" ] && [ -f "$f" ] || return 0
+  # shellcheck disable=SC2034  # read by callers (e.g. opencode-db-list.sh)
+  POL_FILE_RESOLVED="$f"
   local pat k ina d
   while read -r pat k ina d; do
     [ -n "${pat:-}" ] || continue
